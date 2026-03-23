@@ -1,285 +1,272 @@
 import { useState } from "react"
-import { Shield, AlertCircle, User, Lock, Eye, EyeOff, GraduationCap, BookOpen, Users, Mail, UserPlus, ArrowLeft } from 'lucide-react'
+import axios from 'axios'
+import {
+    Shield, AlertCircle, User, Lock, Eye, EyeOff,
+    GraduationCap, BookOpen, Mail, UserPlus, ArrowLeft, CheckCircle2
+} from 'lucide-react'
 import logo from '../../assets/logouepa.png'
 
-const Login = ({ onLoginSuccess }) => {
-    const [formData, setFormData] = useState({ username: '', password: '' })
-    const [showPassword, setShowPassword] = useState(false)
-    const [error, setError] = useState('')
-    const [loading, setLoading] = useState(false)
-    const [activeRole, setActiveRole] = useState('admin') // 'admin' | 'aluno' | 'professor'
-    const [mode, setMode] = useState('login') // 'login' | 'resgister'
-    const [success, setSuccess] = useState('')
+const API_URL = 'http://localhost:3000'
 
-    // campos especificos por perfil de cadastro
+// Admin ainda usa credenciais hardcoded (sem cadastro pelo sistema)
+const ADMIN_CREDENTIALS = { username: 'admin', password: 'admin456' }
+
+const roleConfig = {
+    admin:     { label: 'Administrador', icon: Shield,       color: '#1c1aa3' },
+    aluno:     { label: 'Aluno',         icon: GraduationCap, color: '#7c3aed' },
+    professor: { label: 'Professor',     icon: BookOpen,     color: '#1d4ed8' },
+}
+
+const Login = ({ onLoginSuccess }) => {
+    const [formData, setFormData]     = useState({ username: '', password: '' })
+    const [showPassword, setShowPassword] = useState(false)
+    const [error, setError]           = useState('')
+    const [loading, setLoading]       = useState(false)
+    const [activeRole, setActiveRole] = useState('admin')
+    const [mode, setMode]             = useState('login') // 'login' | 'register'
+    const [success, setSuccess]       = useState('')
+    const [showRegisterPassword, setShowRegisterPassword] = useState(false)
+    const [showConfirmPassword, setShowConfirmPassword]   = useState(false)
 
     const [registerData, setRegisterData] = useState({
-        name: '',
-        email: '',
-        username: '',
-        password: '',
-        confirmPassword: '',
-        // aluno
-        matricula: '',
-        curso: '',
-        // professor
-        departamento: '',
-        siape: ''
+        nome: '', email: '', username: '', password: '', confirmPassword: '',
+        matricula: '', curso: '', siape: '', departamento: '',
     })
 
-    const [showRegisterPassword, setShowRegisterPassword] = useState(false)
-    const [showConfirmPassword, setConfirmPassword] = useState(false)
-
-    const CREDENTIALS = {
-        admin:     { username: 'admin',     password: 'admin456' },
-        aluno:     { username: 'aluno',     password: 'aluno123' },
-        professor: { username: 'professor', password: 'prof123'  },
-    }
-
-    const roleConfig = {
-        admin:     { label: 'Administrador', icon: Shield,      color: '#1c1aa3', desc: 'Acesso completo ao sistema' },
-        aluno:     { label: 'Aluno',          icon: GraduationCap, color: '#7c3aed', desc: 'Visualizar grade de horários' },
-        professor: { label: 'Professor',      icon: BookOpen,    color: '#1d4ed8', desc: 'Consultar disponibilidade de salas' },
-    }
-
-    const handleSubmit = (e) => {
+    // ── Login ──────────────────────────────────────────────────────────
+    const handleSubmit = async (e) => {
         e.preventDefault()
         setError('')
         setLoading(true)
 
-        setTimeout(() => {
-            const cred = CREDENTIALS[activeRole]
-            if (formData.username === cred.username && formData.password === cred.password) {
-                localStorage.setItem('isAdminAuthenticated', activeRole === 'admin' ? 'true' : 'false')
-                localStorage.setItem('adminUser', formData.username)
-                localStorage.setItem('userRole', activeRole)
-                onLoginSuccess(activeRole)
-            } else {
-                setError('Usuário ou senha incorretos')
-                setLoading(false)
+        try {
+            // Admin: ainda usa credencial local
+            if (activeRole === 'admin') {
+                if (formData.username === ADMIN_CREDENTIALS.username &&
+                    formData.password === ADMIN_CREDENTIALS.password) {
+                    localStorage.setItem('isAdminAuthenticated', 'true')
+                    localStorage.setItem('adminUser', formData.username)
+                    localStorage.setItem('userRole', 'admin')
+                    localStorage.setItem('userEmail', formData.username)
+                    onLoginSuccess('admin')
+                } else {
+                    setError('Usuário ou senha incorretos')
+                }
+                return
             }
-        }, 1000)
+
+            // Aluno / Professor: autentica pelo banco
+            const res = await axios.post(`${API_URL}/usuario/login`, {
+                username: formData.username,
+                senha:    formData.password,
+            })
+
+            const user = res.data
+            // Verifica se o papel bate com o perfil selecionado
+            if (user.papel !== activeRole) {
+                setError(`Esta conta é do tipo ${roleConfig[user.papel]?.label || user.papel}, não ${roleConfig[activeRole].label}`)
+                return
+            }
+
+            localStorage.setItem('isAdminAuthenticated', 'false')
+            localStorage.setItem('adminUser', user.nome)
+            localStorage.setItem('userRole', user.papel)
+            localStorage.setItem('userEmail', user.email)
+            onLoginSuccess(user.papel)
+
+        } catch (err) {
+            setError(err.response?.data?.message || 'Erro ao conectar. Verifique se o servidor está rodando.')
+        } finally {
+            setLoading(false)
+        }
     }
 
-    const handleChange = (e) => {
-        setFormData({ ...formData, [e.target.name]: e.target.value })
-        setError('')
-    }
-
-    // Cadastro
-    const handleRegisterChange = () => {
-        setRegisterData({...resgisterData, [e.target.name]:e.target.value})
+    // ── Cadastro ───────────────────────────────────────────────────────
+    const handleRegisterChange = (e) => {
+        setRegisterData({ ...registerData, [e.target.name]: e.target.value })
         setError('')
     }
 
     const validateRegister = () => {
-        const {name, email, username, password, confirmPassword, matricula, curso, siape, departamento} = resgisterData
+        const { nome, email, username, password, confirmPassword, matricula, curso, siape, departamento } = registerData
 
-        if(!name.trim()) return 'Informe seu nome completo'
-        if(!username.trim()) return 'Informe seu nome de usuário'
+        if (!nome.trim())     return 'Informe seu nome completo'
+        if (!username.trim()) return 'Informe seu nome de usuário'
+        if (!email.trim())    return 'Informe seu e-mail'
 
-        // validação de email por perfil
-        if(activeRole === 'aluno'){
-            if(!email.trim()) return 'Informe seu email INSTITUCIONAL!'
-            if(email.toLocaleLowerCase().endsWith('@aluno.uepa.br'))
-                return 'O e-mail deve ser dominio @aluno.uepa.br'
-            if(!matricula.trim()) return 'Informeu seu numero de matricula'
-            if(!curso.trim()) return 'Informeu seu Curso'
+        if (activeRole === 'aluno') {
+            if (!email.toLowerCase().endsWith('@aluno.uepa.br'))
+                return 'O e-mail deve ser do domínio @aluno.uepa.br'
+            if (!matricula.trim()) return 'Informe sua matrícula'
+            if (!curso.trim())     return 'Informe seu curso'
         }
 
-        if(activeRole === 'professor'){
-            if(!email.trim()) return 'Informe seu email INSTITUCIONAL!'
-            if(!siape.trim()) return 'Informeu o SIAPE'
-            if(!departamento.trim()) 'Informe seu Departamento'
+        if (activeRole === 'professor') {
+            if (!siape.trim())       return 'Informe o SIAPE'
+            if (!departamento.trim()) return 'Informe seu departamento'
         }
 
-        if(activeRole === 'admin'){
-            if(!email.trim()) return 'Informe seu email'
-        }
-
-        if(password.length < 6) return 'A senha deve possuir no minimo 6 caracteres'
-        if(password !== confirmPassword) return 'As senhas não são iguais'
+        if (password.length < 6)          return 'A senha deve ter no mínimo 6 caracteres'
+        if (password !== confirmPassword)  return 'As senhas não são iguais'
 
         return null
     }
 
-    const handleRegisterSubmit = (e) => {
+    const handleRegisterSubmit = async (e) => {
         e.preventDefault()
         setError('')
         const validationError = validateRegister()
         if (validationError) { setError(validationError); return }
- 
+
         setLoading(true)
-        setTimeout(() => {
+        try {
+            await axios.post(`${API_URL}/usuario/cadastro`, {
+                nome:         registerData.nome,
+                email:        registerData.email,
+                username:     registerData.username,
+                senha:        registerData.password,
+                papel:        activeRole,
+                matricula:    registerData.matricula    || undefined,
+                curso:        registerData.curso        || undefined,
+                siape:        registerData.siape        || undefined,
+                departamento: registerData.departamento || undefined,
+            })
+            setSuccess(`Cadastro de ${roleConfig[activeRole].label} realizado! Aguarde aprovação do administrador para acessar o sistema.`)
+        } catch (err) {
+            setError(err.response?.data?.message || 'Erro ao cadastrar. Tente novamente.')
+        } finally {
             setLoading(false)
-            setSuccess(`Cadastro de ${roleConfig[activeRole].label} realizado com sucesso! Aguarde aprovação para acessar o sistema.`)
-        }, 1200)
+        }
     }
 
-     const switchMode = (newMode) => {
-        setMode(newMode)
-        setError('')
-        setSuccess('')
+    const switchMode = (newMode) => {
+        setMode(newMode); setError(''); setSuccess('')
         setFormData({ username: '', password: '' })
-        setRegisterData({ name: '', email: '', username: '', password: '', confirmPassword: '', matricula: '', curso: '', departamento: '', siape: '' })
+        setRegisterData({ nome: '', email: '', username: '', password: '', confirmPassword: '', matricula: '', curso: '', siape: '', departamento: '' })
     }
- 
+
     const switchRole = (role) => {
-        setActiveRole(role)
-        setError('')
-        setSuccess('')
+        setActiveRole(role); setError(''); setSuccess('')
         setFormData({ username: '', password: '' })
-        setRegisterData({ name: '', email: '', username: '', password: '', confirmPassword: '', matricula: '', curso: '', departamento: '', siape: '' })
+        setRegisterData({ nome: '', email: '', username: '', password: '', confirmPassword: '', matricula: '', curso: '', siape: '', departamento: '' })
     }
- 
-    const CurrentIcon = roleConfig[activeRole].icon
-    const accentColor = roleConfig[activeRole].color
 
-    // Render Helps
-
-     const InputField = ({ icon: Icon, name, placeholder, type = 'text', value, onChange, onFocus, onBlur, extra }) => (
-        <div className="relative">
-            <Icon size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-                type={type}
-                name={name}
-                value={value}
-                onChange={onChange}
-                placeholder={placeholder}
-                required
-                className="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200 text-gray-800 text-sm bg-gray-50 focus:outline-none transition-all"
-                onFocus={onFocus || (e => e.target.style.borderColor = accentColor)}
-                onBlur={onBlur || (e => e.target.style.borderColor = '#e5e7eb')}
-            />
-            {extra}
-        </div>
-    )
+    const cfg = roleConfig[activeRole]
+    const CurrentIcon = cfg.icon
+    const accentColor = cfg.color
 
     return (
-        <div className="min-h-screen bg-[linear-gradient(135deg,#0f0c29_0%,#1c1aa3_50%,#150355_100%)] flex items-center justify-center p-4">
- 
-            {/* Orbs decorativos */}
+        <div className="min-h-screen flex items-center justify-center p-4"
+            style={{ background: 'linear-gradient(135deg,#0f0c29 0%,#1c1aa3 50%,#150355 100%)' }}>
+
+            {/* Orbs */}
             <div className="fixed inset-0 overflow-hidden pointer-events-none">
                 <div className="absolute -top-40 -left-40 w-96 h-96 rounded-full opacity-20"
-                    style={{ background: 'radial-gradient(circle, #7c3aed, transparent)', filter: 'blur(60px)', animation: 'pulse 4s ease-in-out infinite' }} />
+                    style={{ background: 'radial-gradient(circle, #7c3aed, transparent)', filter: 'blur(60px)' }} />
                 <div className="absolute -bottom-40 -right-40 w-96 h-96 rounded-full opacity-20"
-                    style={{ background: 'radial-gradient(circle, #1c1aa3, transparent)', filter: 'blur(60px)', animation: 'pulse 4s ease-in-out infinite 2s' }} />
+                    style={{ background: 'radial-gradient(circle, #1c1aa3, transparent)', filter: 'blur(60px)' }} />
             </div>
- 
+
             <div className="relative z-10 w-full max-w-4xl rounded-3xl overflow-hidden shadow-2xl flex"
                 style={{ minHeight: '520px', boxShadow: '0 32px 80px rgba(0,0,0,0.6)' }}>
- 
-                {/*  Painel esquerdo  */}
+
+                {/* ── Formulário ── */}
                 <div className="flex-1 bg-white flex flex-col justify-center px-10 py-10 overflow-y-auto">
- 
+
                     {/* Logo */}
                     <div className="flex items-center gap-3 mb-6">
                         <img src={logo} alt="Logo UEPA" className="h-10 object-contain" />
                         <div>
                             <p className="text-xs font-bold tracking-widest uppercase" style={{ color: '#1c1aa3' }}>SCA UEPA</p>
-                            <p className="text-[10px] text-gray-400 tracking-wide">Sistema Cronos de Alocação</p>
+                            <p className="text-[10px] text-gray-400">Sistema Cronos de Alocação</p>
                         </div>
                     </div>
- 
-                    <h1 className="text-3xl font-black text-gray-900 mb-1 tracking-tight">
-                        {mode === 'login' ? 'Bem-vindo' : 'Criar Conta'}
+
+                    <h1 className="text-3xl font-black text-gray-900 mb-1">
+                        {mode === 'register' ? 'Criar Conta' : 'Bem-vindo'}
                     </h1>
                     <p className="text-sm text-gray-500 mb-5">
-                        {mode === 'login' ? 'Selecione seu perfil e faça login' : 'Preencha os dados abaixo para se cadastrar'}
+                        {mode === 'register' ? 'Preencha os dados abaixo para se cadastrar' : 'Selecione seu perfil e faça login'}
                     </p>
- 
+
                     {/* Seletor de perfil */}
                     <div className="flex gap-2 mb-5">
-                        {Object.entries(roleConfig).map(([key, cfg]) => {
-                            const Icon = cfg.icon
+                        {Object.entries(roleConfig).map(([key, c]) => {
+                            const Icon = c.icon
                             const isActive = activeRole === key
+                            // Esconde admin no cadastro
+                            if (mode === 'register' && key === 'admin') return null
                             return (
-                                <button
-                                    key={key}
-                                    type="button"
-                                    onClick={() => switchRole(key)}
-                                    className="cursor-pointer flex-1 flex flex-col items-center gap-1 py-3 px-2 rounded-xl border-2 transition-all duration-200 text-center"
+                                <button key={key} type="button" onClick={() => switchRole(key)}
+                                    className="cursor-pointer flex-1 flex flex-col items-center gap-1 py-3 px-2 rounded-xl border-2 transition-all text-center"
                                     style={{
-                                        borderColor: isActive ? cfg.color : '#e5e7eb',
-                                        backgroundColor: isActive ? cfg.color + '12' : 'transparent',
-                                        color: isActive ? cfg.color : '#6b7280',
+                                        borderColor: isActive ? c.color : '#e5e7eb',
+                                        backgroundColor: isActive ? c.color + '12' : 'transparent',
+                                        color: isActive ? c.color : '#6b7280',
                                         transform: isActive ? 'translateY(-2px)' : 'none',
-                                        boxShadow: isActive ? `0 4px 16px ${cfg.color}30` : 'none',
+                                        boxShadow: isActive ? `0 4px 16px ${c.color}30` : 'none',
                                     }}>
                                     <Icon size={18} />
-                                    <span className="text-[11px] font-bold">{cfg.label}</span>
+                                    <span className="text-[11px] font-bold">{c.label}</span>
                                 </button>
                             )
                         })}
                     </div>
- 
+
                     {/* Erro */}
                     {error && (
                         <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 px-4 py-3 rounded-xl mb-4 text-sm">
-                            <AlertCircle size={16} />
-                            <span>{error}</span>
+                            <AlertCircle size={16} /><span>{error}</span>
                         </div>
                     )}
- 
-                    {/* Sucesso */}
+
+                    {/* Sucesso no cadastro */}
                     {success && (
-                        <div className="flex items-start gap-2 text-green-700 bg-green-50 border border-green-200 px-4 py-3 rounded-xl mb-4 text-sm">
-                            <CheckCircle size={16} className="shrink-0 mt-0.5" />
-                            <span>{success}</span>
+                        <div className="flex flex-col items-center gap-4 py-4">
+                            <div className="w-16 h-16 rounded-full flex items-center justify-center"
+                                style={{ background: 'linear-gradient(135deg,#1c1aa3,#7c3aed)' }}>
+                                <CheckCircle2 size={32} className="text-white" />
+                            </div>
+                            <p className="text-sm text-gray-600 text-center leading-relaxed">{success}</p>
+                            <button type="button" onClick={() => switchMode('login')}
+                                className="flex items-center gap-2 text-sm font-semibold hover:underline"
+                                style={{ color: accentColor }}>
+                                <ArrowLeft size={15} /> Ir para o login
+                            </button>
                         </div>
                     )}
- 
-                    {/*  FORMULÁRIO DE LOGIN  */}
+
+                    {/* ── FORM LOGIN ── */}
                     {mode === 'login' && !success && (
                         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                             <div className="relative">
                                 <User size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-                                <input
-                                    type="text"
-                                    name="username"
-                                    value={formData.username}
-                                    onChange={handleChange}
-                                    placeholder="Usuário"
-                                    required
-                                    autoComplete="username"
+                                <input type="text" name="username" value={formData.username}
+                                    onChange={e => { setFormData({...formData, username: e.target.value}); setError('') }}
+                                    placeholder="Usuário" required autoComplete="username"
                                     className="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200 text-gray-800 text-sm bg-gray-50 focus:outline-none transition-all"
                                     onFocus={e => e.target.style.borderColor = accentColor}
-                                    onBlur={e => e.target.style.borderColor = '#e5e7eb'}
-                                />
+                                    onBlur={e => e.target.style.borderColor = '#e5e7eb'} />
                             </div>
- 
+
                             <div className="relative">
                                 <Lock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-                                <input
-                                    type={showPassword ? 'text' : 'password'}
-                                    name="password"
+                                <input type={showPassword ? 'text' : 'password'} name="password"
                                     value={formData.password}
-                                    onChange={handleChange}
-                                    placeholder="Senha"
-                                    required
-                                    autoComplete="current-password"
-                                    className="w-full pl-11 pr-12 py-3 rounded-xl border border-gray-200 text-gray-800 text-sm bg-gray-50 focus:outline-none transition-all [&::-ms-reveal]:hidden"
+                                    onChange={e => { setFormData({...formData, password: e.target.value}); setError('') }}
+                                    placeholder="Senha" required autoComplete="current-password"
+                                    className="w-full pl-11 pr-12 py-3 rounded-xl border border-gray-200 text-gray-800 text-sm bg-gray-50 focus:outline-none transition-all"
                                     onFocus={e => e.target.style.borderColor = accentColor}
-                                    onBlur={e => e.target.style.borderColor = '#e5e7eb'}
-                                />
+                                    onBlur={e => e.target.style.borderColor = '#e5e7eb'} />
                                 <button type="button" onClick={() => setShowPassword(p => !p)}
-                                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors">
+                                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                                     {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                                 </button>
                             </div>
- 
-                            <p className="text-xs text-right -mt-2" style={{ color: accentColor }}>
-                                <span className="cursor-pointer hover:underline">Esqueceu a senha?</span>
-                            </p>
- 
-                            <button
-                                type="submit"
-                                disabled={loading}
-                                className="cursor-pointer w-full py-3 rounded-xl font-bold text-white text-sm tracking-wide transition-all duration-200 disabled:opacity-60"
-                                style={{
-                                    background: `linear-gradient(135deg, ${accentColor}, #7c3aed)`,
-                                    boxShadow: `0 8px 24px ${accentColor}50`,
-                                }}>
+
+                            <button type="submit" disabled={loading}
+                                className="cursor-pointer w-full py-3 rounded-xl font-bold text-white text-sm tracking-wide transition-all disabled:opacity-60"
+                                style={{ background: `linear-gradient(135deg, ${accentColor}, #7c3aed)`, boxShadow: `0 8px 24px ${accentColor}50` }}>
                                 {loading ? (
                                     <span className="flex items-center justify-center gap-2">
                                         <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
@@ -291,176 +278,134 @@ const Login = ({ onLoginSuccess }) => {
                                 ) : (
                                     <span className="flex items-center justify-center gap-2">
                                         <CurrentIcon size={16} />
-                                        Entrar como {roleConfig[activeRole].label}
+                                        Entrar como {cfg.label}
                                     </span>
                                 )}
                             </button>
- 
-                            {/* Link para cadastro — admin não pode se auto-cadastrar */}
+
                             {activeRole !== 'admin' && (
-                                <p className="text-xs text-center text-gray-500 mt-1">
+                                <p className="text-xs text-center text-gray-500">
                                     Não tem conta?{' '}
-                                    <span
-                                        className="cursor-pointer font-semibold hover:underline"
-                                        style={{ color: accentColor }}
-                                        onClick={() => switchMode('register')}>
+                                    <button type="button" onClick={() => switchMode('register')}
+                                        className="font-bold hover:underline" style={{ color: accentColor }}>
                                         Cadastre-se
-                                    </span>
+                                    </button>
+                                </p>
+                            )}
+
+                            {activeRole === 'admin' && (
+                                <p className="mt-2 text-[11px] text-gray-400 text-center">
+                                    Teste — admin: <span className="font-mono text-gray-500">admin</span> / <span className="font-mono text-gray-500">admin456</span>
                                 </p>
                             )}
                         </form>
                     )}
- 
-                    {/* FORMULÁRIO DE CADASTRO */}
+
+                    {/* ── FORM CADASTRO ── */}
                     {mode === 'register' && !success && (
                         <form onSubmit={handleRegisterSubmit} className="flex flex-col gap-3">
- 
-                            {/* Nome completo */}
+
+                            {/* Nome */}
                             <div className="relative">
                                 <User size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-                                <input
-                                    type="text" name="name" value={registerData.name}
+                                <input type="text" name="nome" value={registerData.nome}
                                     onChange={handleRegisterChange} placeholder="Nome completo" required
                                     className="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200 text-gray-800 text-sm bg-gray-50 focus:outline-none transition-all"
                                     onFocus={e => e.target.style.borderColor = accentColor}
-                                    onBlur={e => e.target.style.borderColor = '#e5e7eb'}
-                                />
+                                    onBlur={e => e.target.style.borderColor = '#e5e7eb'} />
                             </div>
- 
-                            {/* E-mail */}
+
+                            {/* Email */}
                             <div className="relative">
                                 <Mail size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-                                <input
-                                    type="email" name="email" value={registerData.email}
+                                <input type="email" name="email" value={registerData.email}
                                     onChange={handleRegisterChange}
-                                    placeholder={
-                                        activeRole === 'aluno'
-                                            ? 'seunome@aluno.uepa.br'
-                                            : activeRole === 'professor'
-                                            ? 'seunome@uepa.br'
-                                            : 'E-mail'
-                                    }
+                                    placeholder={activeRole === 'aluno' ? 'seunome@aluno.uepa.br' : 'seunome@uepa.br'}
                                     required
                                     className="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200 text-gray-800 text-sm bg-gray-50 focus:outline-none transition-all"
                                     onFocus={e => e.target.style.borderColor = accentColor}
-                                    onBlur={e => e.target.style.borderColor = '#e5e7eb'}
-                                />
+                                    onBlur={e => e.target.style.borderColor = '#e5e7eb'} />
+                                {activeRole === 'aluno' && (
+                                    <p className="text-[11px] text-amber-600 mt-1 ml-1">
+                                        ⚠️ Apenas e-mails <span className="font-bold">@aluno.uepa.br</span> são aceitos para alunos.
+                                    </p>
+                                )}
                             </div>
- 
-                            {/* Aviso domínio aluno */}
+
+                            {/* Campos específicos por papel */}
                             {activeRole === 'aluno' && (
-                                <p className="text-[11px] text-purple-600 bg-purple-50 border border-purple-100 rounded-lg px-3 py-2 -mt-1">
-                                    ⚠️ Apenas e-mails <strong>@aluno.uepa.br</strong> são aceitos para alunos.
-                                </p>
-                            )}
- 
-                            {/* Campos exclusivos — ALUNO */}
-                            {activeRole === 'aluno' && (
-                                <div className="flex gap-2">
-                                    <div className="relative flex-1">
-                                        <GraduationCap size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-                                        <input
-                                            type="text" name="matricula" value={registerData.matricula}
-                                            onChange={handleRegisterChange} placeholder="Matrícula" required
-                                            className="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200 text-gray-800 text-sm bg-gray-50 focus:outline-none transition-all"
-                                            onFocus={e => e.target.style.borderColor = accentColor}
-                                            onBlur={e => e.target.style.borderColor = '#e5e7eb'}
-                                        />
-                                    </div>
-                                    <div className="relative flex-1">
-                                        <BookOpen size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-                                        <input
-                                            type="text" name="curso" value={registerData.curso}
-                                            onChange={handleRegisterChange} placeholder="Curso" required
-                                            className="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200 text-gray-800 text-sm bg-gray-50 focus:outline-none transition-all"
-                                            onFocus={e => e.target.style.borderColor = accentColor}
-                                            onBlur={e => e.target.style.borderColor = '#e5e7eb'}
-                                        />
-                                    </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <input type="text" name="matricula" value={registerData.matricula}
+                                        onChange={handleRegisterChange} placeholder="Matrícula" required
+                                        className="px-4 py-3 rounded-xl border border-gray-200 text-gray-800 text-sm bg-gray-50 focus:outline-none transition-all"
+                                        onFocus={e => e.target.style.borderColor = accentColor}
+                                        onBlur={e => e.target.style.borderColor = '#e5e7eb'} />
+                                    <input type="text" name="curso" value={registerData.curso}
+                                        onChange={handleRegisterChange} placeholder="Curso" required
+                                        className="px-4 py-3 rounded-xl border border-gray-200 text-gray-800 text-sm bg-gray-50 focus:outline-none transition-all"
+                                        onFocus={e => e.target.style.borderColor = accentColor}
+                                        onBlur={e => e.target.style.borderColor = '#e5e7eb'} />
                                 </div>
                             )}
- 
-                            {/* Campos exclusivos — PROFESSOR */}
+
                             {activeRole === 'professor' && (
-                                <div className="flex gap-2">
-                                    <div className="relative flex-1">
-                                        <Shield size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-                                        <input
-                                            type="text" name="siape" value={registerData.siape}
-                                            onChange={handleRegisterChange} placeholder="SIAPE" required
-                                            className="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200 text-gray-800 text-sm bg-gray-50 focus:outline-none transition-all"
-                                            onFocus={e => e.target.style.borderColor = accentColor}
-                                            onBlur={e => e.target.style.borderColor = '#e5e7eb'}
-                                        />
-                                    </div>
-                                    <div className="relative flex-1">
-                                        <BookOpen size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-                                        <input
-                                            type="text" name="departamento" value={registerData.departamento}
-                                            onChange={handleRegisterChange} placeholder="Departamento" required
-                                            className="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200 text-gray-800 text-sm bg-gray-50 focus:outline-none transition-all"
-                                            onFocus={e => e.target.style.borderColor = accentColor}
-                                            onBlur={e => e.target.style.borderColor = '#e5e7eb'}
-                                        />
-                                    </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <input type="text" name="siape" value={registerData.siape}
+                                        onChange={handleRegisterChange} placeholder="SIAPE" required
+                                        className="px-4 py-3 rounded-xl border border-gray-200 text-gray-800 text-sm bg-gray-50 focus:outline-none transition-all"
+                                        onFocus={e => e.target.style.borderColor = accentColor}
+                                        onBlur={e => e.target.style.borderColor = '#e5e7eb'} />
+                                    <input type="text" name="departamento" value={registerData.departamento}
+                                        onChange={handleRegisterChange} placeholder="Departamento" required
+                                        className="px-4 py-3 rounded-xl border border-gray-200 text-gray-800 text-sm bg-gray-50 focus:outline-none transition-all"
+                                        onFocus={e => e.target.style.borderColor = accentColor}
+                                        onBlur={e => e.target.style.borderColor = '#e5e7eb'} />
                                 </div>
                             )}
- 
-                            {/* Usuário */}
+
+                            {/* Username */}
                             <div className="relative">
-                                <Users size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-                                <input
-                                    type="text" name="username" value={registerData.username}
+                                <User size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                                <input type="text" name="username" value={registerData.username}
                                     onChange={handleRegisterChange} placeholder="Nome de usuário" required
                                     className="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200 text-gray-800 text-sm bg-gray-50 focus:outline-none transition-all"
                                     onFocus={e => e.target.style.borderColor = accentColor}
-                                    onBlur={e => e.target.style.borderColor = '#e5e7eb'}
-                                />
+                                    onBlur={e => e.target.style.borderColor = '#e5e7eb'} />
                             </div>
- 
+
                             {/* Senha */}
                             <div className="relative">
                                 <Lock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-                                <input
-                                    type={showRegisterPassword ? 'text' : 'password'}
-                                    name="password" value={registerData.password}
-                                    onChange={handleRegisterChange} placeholder="Senha (mín. 6 caracteres)" required
+                                <input type={showRegisterPassword ? 'text' : 'password'} name="password"
+                                    value={registerData.password} onChange={handleRegisterChange}
+                                    placeholder="Senha (mín. 6 caracteres)" required
                                     className="w-full pl-11 pr-12 py-3 rounded-xl border border-gray-200 text-gray-800 text-sm bg-gray-50 focus:outline-none transition-all"
                                     onFocus={e => e.target.style.borderColor = accentColor}
-                                    onBlur={e => e.target.style.borderColor = '#e5e7eb'}
-                                />
+                                    onBlur={e => e.target.style.borderColor = '#e5e7eb'} />
                                 <button type="button" onClick={() => setShowRegisterPassword(p => !p)}
                                     className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                                     {showRegisterPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                                 </button>
                             </div>
- 
+
                             {/* Confirmar senha */}
                             <div className="relative">
                                 <Lock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-                                <input
-                                    type={showConfirmPassword ? 'text' : 'password'}
-                                    name="confirmPassword" value={registerData.confirmPassword}
-                                    onChange={handleRegisterChange} placeholder="Confirmar senha" required
+                                <input type={showConfirmPassword ? 'text' : 'password'} name="confirmPassword"
+                                    value={registerData.confirmPassword} onChange={handleRegisterChange}
+                                    placeholder="Confirmar senha" required
                                     className="w-full pl-11 pr-12 py-3 rounded-xl border border-gray-200 text-gray-800 text-sm bg-gray-50 focus:outline-none transition-all"
                                     onFocus={e => e.target.style.borderColor = accentColor}
-                                    onBlur={e => e.target.style.borderColor = '#e5e7eb'}
-                                />
+                                    onBlur={e => e.target.style.borderColor = '#e5e7eb'} />
                                 <button type="button" onClick={() => setShowConfirmPassword(p => !p)}
                                     className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                                     {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                                 </button>
                             </div>
- 
-                            {/* Botão cadastrar */}
-                            <button
-                                type="submit"
-                                disabled={loading}
-                                className="cursor-pointer w-full py-3 rounded-xl font-bold text-white text-sm tracking-wide transition-all duration-200 disabled:opacity-60 mt-1"
-                                style={{
-                                    background: `linear-gradient(135deg, ${accentColor}, #7c3aed)`,
-                                    boxShadow: `0 8px 24px ${accentColor}50`,
-                                }}>
+
+                            <button type="submit" disabled={loading}
+                                className="cursor-pointer w-full py-3 rounded-xl font-bold text-white text-sm tracking-wide transition-all disabled:opacity-60 mt-1"
+                                style={{ background: `linear-gradient(135deg, ${accentColor}, #7c3aed)`, boxShadow: `0 8px 24px ${accentColor}50` }}>
                                 {loading ? (
                                     <span className="flex items-center justify-center gap-2">
                                         <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
@@ -472,93 +417,56 @@ const Login = ({ onLoginSuccess }) => {
                                 ) : (
                                     <span className="flex items-center justify-center gap-2">
                                         <UserPlus size={16} />
-                                        Cadastrar como {roleConfig[activeRole].label}
+                                        Cadastrar como {cfg.label}
                                     </span>
                                 )}
                             </button>
- 
-                            {/* Voltar ao login */}
-                            <button
-                                type="button"
-                                onClick={() => switchMode('login')}
+
+                            <button type="button" onClick={() => switchMode('login')}
                                 className="cursor-pointer flex items-center justify-center gap-1 text-xs text-gray-500 hover:text-gray-700 transition-colors mt-1">
                                 <ArrowLeft size={13} /> Voltar ao login
                             </button>
                         </form>
                     )}
- 
-                    {/* Após cadastro com sucesso */}
-                    {success && (
-                        <div className="flex flex-col items-center gap-4 mt-2">
-                            <button
-                                type="button"
-                                onClick={() => switchMode('login')}
-                                className="cursor-pointer flex items-center gap-2 text-sm font-semibold hover:underline transition-colors"
-                                style={{ color: accentColor }}>
-                                <ArrowLeft size={15} /> Ir para o login
-                            </button>
-                        </div>
-                    )}
- 
-                    {/* Hint de credenciais (apenas em login) */}
-                    {mode === 'login' && (
-                        <p className="mt-5 text-[11px] text-gray-400 text-center">
-                            Teste — {activeRole}: <span className="font-mono text-gray-500">{CREDENTIALS[activeRole].username}</span> / <span className="font-mono text-gray-500">{CREDENTIALS[activeRole].password}</span>
-                        </p>
-                    )}
                 </div>
- 
-                {/* ── Painel direito: ilustração / info ── */}
+
+                {/* ── Painel direito ── */}
                 <div className="hidden md:flex w-80 flex-col items-center justify-center px-10 py-10 relative overflow-hidden"
                     style={{ background: `linear-gradient(160deg, #1c1aa3 0%, #150355 60%, #7c3aed 100%)` }}>
- 
-                    <div className="absolute top-0 right-0 w-48 h-48 rounded-full opacity-10"
-                        style={{ background: 'white', transform: 'translate(30%, -30%)' }} />
-                    <div className="absolute bottom-0 left-0 w-64 h-64 rounded-full opacity-10"
-                        style={{ background: 'white', transform: 'translate(-30%, 30%)' }} />
-                    <div className="absolute top-1/2 left-1/2 w-32 h-32 rounded-full opacity-5"
-                        style={{ background: 'white', transform: 'translate(-50%, -50%)' }} />
- 
+                    <div className="absolute top-0 right-0 w-48 h-48 rounded-full opacity-10" style={{ background: 'white', transform: 'translate(30%,-30%)' }} />
+                    <div className="absolute bottom-0 left-0 w-64 h-64 rounded-full opacity-10" style={{ background: 'white', transform: 'translate(-30%,30%)' }} />
+
                     <div className="relative z-10 text-center">
                         <div className="mx-auto mb-6 w-20 h-20 rounded-2xl flex items-center justify-center"
-                            style={{
-                                background: 'rgba(255,255,255,0.15)',
-                                backdropFilter: 'blur(10px)',
-                                border: '1px solid rgba(255,255,255,0.2)',
-                                boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-                            }}>
+                            style={{ background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.2)', boxShadow: '0 8px 32px rgba(0,0,0,0.3)' }}>
                             {mode === 'register' ? <UserPlus size={36} className="text-white" /> : <CurrentIcon size={36} className="text-white" />}
                         </div>
- 
+
                         <h2 className="text-2xl font-black text-white mb-3 leading-tight">
                             {mode === 'register'
-                                ? `Novo ${roleConfig[activeRole].label}`
+                                ? `Novo ${cfg.label}`
                                 : activeRole === 'admin' ? 'Painel Admin'
                                 : activeRole === 'aluno' ? 'Olá, Aluno!'
                                 : 'Olá, Professor!'}
                         </h2>
- 
+
                         <p className="text-sm text-blue-200 leading-relaxed mb-8">
                             {mode === 'register'
                                 ? activeRole === 'aluno'
-                                    ? 'Use seu e-mail institucional @aluno.uepa.br para se cadastrar no sistema.'
-                                    : activeRole === 'professor'
-                                    ? 'Informe seu SIAPE e departamento para criar sua conta.'
-                                    : 'Preencha os dados para criar acesso administrativo.'
+                                    ? 'Use seu e-mail institucional @aluno.uepa.br para se cadastrar.'
+                                    : 'Informe seu SIAPE e departamento para criar sua conta.'
                                 : activeRole === 'admin'
                                 ? 'Gerencie horários, salas, professores e toda a grade acadêmica.'
                                 : activeRole === 'aluno'
                                 ? 'Consulte a disponibilidade de salas e visualize a grade de horários.'
                                 : 'Verifique os horários das turmas e a disponibilidade das salas.'}
                         </p>
- 
+
                         <div className="flex flex-col gap-3 text-left">
                             {(mode === 'register'
                                 ? activeRole === 'aluno'
                                     ? ['E-mail @aluno.uepa.br obrigatório', 'Informe matrícula e curso', 'Aguarde aprovação do admin']
-                                    : activeRole === 'professor'
-                                    ? ['E-mail institucional', 'SIAPE e departamento', 'Aguarde aprovação do admin']
-                                    : ['Dados administrativos', 'Criação de acesso seguro', 'Aguarde aprovação']
+                                    : ['E-mail institucional', 'SIAPE e departamento', 'Aguarde aprovação do admin']
                                 : activeRole === 'admin'
                                 ? ['Gerenciar alocações', 'Cadastrar professores', 'Configurar salas e cursos']
                                 : ['Ver grade de horários', 'Consultar disponibilidade', 'Filtrar por curso e dia']
@@ -572,7 +480,7 @@ const Login = ({ onLoginSuccess }) => {
                                 </div>
                             ))}
                         </div>
- 
+
                         <div className="mt-8 inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold"
                             style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', color: 'white' }}>
                             <div className="w-2 h-2 rounded-full bg-green-400" style={{ animation: 'pulse 2s infinite' }} />
@@ -584,4 +492,5 @@ const Login = ({ onLoginSuccess }) => {
         </div>
     )
 }
+
 export default Login
